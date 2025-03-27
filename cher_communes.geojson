@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carte Interactive du Département du Cher</title>
+
+    <!-- Inclure une police Google moderne -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+
+    <!-- Inclure Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    
+    <!-- Inclure Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <!-- Styles personnalisés -->
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+        }
+
+        #header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #header img {
+            height: 50px;
+            margin-right: 20px;
+        }
+
+        #header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        #map {
+            height: 80vh;
+            margin: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #searchBar {
+            margin: 10px;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        #searchInput {
+            width: 300px;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        #suggestions {
+            border: 1px solid #ccc;
+            max-height: 150px;
+            overflow-y: auto;
+            background-color: white;
+            position: absolute;
+            top: 50px;
+            width: 300px;
+            z-index: 1000;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+
+        #suggestions div {
+            padding: 8px;
+            cursor: pointer;
+        }
+
+        #suggestions div:hover {
+            background-color: #f0f0f0;
+        }
+
+        #footer {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            text-align: center;
+        }
+
+        /* Agrandir le popup en bas à droite */
+        #popupPropositions {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: #FF5733;
+            color: white;
+            border: 2px solid #C70039;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            display: none; /* Masquer par défaut */
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <!-- Bandeau avec logo -->
+    <div id="header">
+        <img src="https://via.placeholder.com/100x50?text=Logo" alt="Logo du site" />
+        <h1>Carte Interactive du Département du Cher</h1>
+    </div>
+
+    <!-- Barre de recherche -->
+    <div id="searchBar">
+        <input type="text" id="searchInput" placeholder="Rechercher une commune..." onkeyup="searchCity()" />
+        <div id="suggestions"></div>
+    </div>
+
+    <!-- Carte -->
+    <div id="map"></div>
+
+    <!-- Popup pour les destinations -->
+    <div id="popupPropositions">
+        <strong>Destinations des points de repère les plus proches :</strong>
+        <div id="destination1"></div>
+        <div id="destination2"></div>
+        <div id="travelTime"></div>
+    </div>
+
+    <!-- Pied de page avec le copyright -->
+    <div id="footer">
+        <p>© Matéo CALLEJA - 2024. Tous droits réservés.</p>
+    </div>
+
+    <script>
+        // Initialiser la carte centrée sur le département du Cher
+        var map = L.map('map').setView([47.0833, 2.4], 9); // Coordonnées approximatives du Cher
+
+        // Couches de base : OpenStreetMap
+        var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; OpenStreetMap contributors'
+        });
+        osmLayer.addTo(map);
+
+        // Ajout des points de repère (Hôpitaux)
+        var customIcon = L.icon({
+            iconUrl: 'https://aidersante.com/wp-content/uploads/logo-H-hopital.jpg',  // Logo de l'hôpital
+            iconSize: [30, 40],
+            iconAnchor: [15, 40]
+        });
+
+        var pointsDeReperes = [
+            { lat: 47.6899, lng: 2.6327, description: "Point de repère 1" },
+            { lat: 47.0838, lng: 2.4364, description: "Point de repère 2" },
+            { lat: 46.7257, lng: 2.4957, description: "Point de repère 3" },
+            { lat: 47.2275421, lng: 2.0522743, description: "Point de repère 4" },
+            { lat: 47.6899862, lng: 2.6327056, description: "Cosne" },  // Point de repère pour Cosne
+            { lat: 46.8229429, lng: 3.4522439, description: "Point de repère 6" },
+            { lat: 47.902964, lng: 1.909251, description: "Hôpital d'Orléans" },  // Hôpital d'Orléans
+            { lat: 47.361034, lng: 1.745805, description: "Hôpital de Romorantin-Lanthenay" },  // Romorantin-Lanthenay
+            { lat: 46.94809, lng: 1.99319, description: "Hôpital d'Issoudun" }  // Issoudun
+        ];
+
+        var markers = [];
+        pointsDeReperes.forEach(function(point) {
+            var marker = L.marker([point.lat, point.lng], { icon: customIcon }).addTo(map)
+                .bindPopup(point.description);
+            markers.push(marker);
+        });
+
+        // ===== COLLER VOS DONNÉES GEOJSON ICI =====
+        var communesCher = {
+            "type": "FeatureCollection",
+            "features": [
+                // Collez vos données GeoJSON ici.
+                // Assurez-vous que les données sont bien formatées et ne contiennent aucune erreur de syntaxe.
+            ]
+        };
+        // ===========================================
+
+        // Stocker les couches des communes pour référence lors de la recherche
+        var communeLayers = {};
+
+        // Ajouter les limites des communes sur la carte et afficher le nom au survol avec changement de couleur
+        L.geoJSON(communesCher, {
+            style: function(feature) {
+                return {
+                    color: "#3388ff",  // Couleur initiale
+                    weight: 2,
+                    opacity: 0.6
+                };
+            },
+            onEachFeature: function(feature, layer) {
+                // Changer la couleur de la commune et afficher le nom lorsqu'on passe la souris dessus
+                layer.on('mouseover', function() {
+                    layer.setStyle({
+                        color: '#ff7800',  // Couleur au survol
+                        weight: 5
+                    });
+                    layer.bindTooltip(feature.properties.nom, {
+                        permanent: false,
+                        className: "commune-name",
+                        offset: [0, 0]
+                    }).openTooltip();
+                });
+
+                layer.on('mouseout', function() {
+                    layer.setStyle({
+                        color: '#3388ff',  // Remettre la couleur par défaut
+                        weight: 2
+                    });
+                });
+
+                // Stocker chaque couche dans l'objet `communeLayers` en fonction du nom de la commune
+                communeLayers[feature.properties.nom] = layer;
+            }
+        }).addTo(map);
+
+        // Fonction pour supprimer les accents et normaliser les termes "Saint", "Sainte", "St", "Ste"
+        function normalizeSaintNames(str) {
+            return str.replace(/\b(Saint|Sainte|St|Ste)[\s-]*/gi, 'Saint-');
+        }
+
+        // Fonction pour retirer les accents d'une chaîne
+        function removeAccents(str) {
+            return str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+        }
+
+        // Fonction pour calculer la distance (Haversine)
+        function getDistance(lat1, lng1, lat2, lng2) {
+            function toRad(x) {
+                return x * Math.PI / 180;
+            }
+
+            var R = 6371; // Rayon de la terre en km
+            var dLat = toRad(lat2 - lat1);
+            var dLon = toRad(lng2 - lng1);
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var d = R * c; // Distance en km
+            return d;
+        }
+
+        // Calculer le temps de trajet en fonction de la distance (vitesse moyenne de 60 km/h)
+        function calculateTravelTime(distance) {
+            var speed = 60; // km/h
+            var timeInHours = distance / speed;
+            var timeInMinutes = Math.round(timeInHours * 60); // Convertir en minutes
+            return timeInMinutes;
+        }
+
+        // Fonction pour faire clignoter la commune sélectionnée et proposer les 2 points de repère les plus proches
+        function highlightCommune(name) {
+            var layer = communeLayers[name];
+            var suggestionsDiv = document.getElementById("suggestions");
+            suggestionsDiv.innerHTML = "";  // Vider les suggestions après sélection
+
+            if (layer) {
+                // Intensifier le clignotement pour qu'il soit plus visible
+                var interval = setInterval(function() {
+                    layer.setStyle({
+                        color: layer.options.color === '#ff0000' ? '#00ff00' : '#ff0000',  // Alternance entre rouge et vert
+                        weight: layer.options.weight === 2 ? 5 : 2  // Augmentation de l'épaisseur des lignes
+                    });
+                }, 300);  // Clignotement plus rapide (toutes les 300 ms)
+
+                // Arrêter le clignotement après 5 secondes pour un effet plus long
+                setTimeout(function() {
+                    clearInterval(interval);
+                    layer.setStyle({
+                        color: '#3388ff',  // Remettre la couleur par défaut
+                        weight: 2  // Remettre l'épaisseur par défaut
+                    });
+                }, 5000);
+
+                // Calculer les deux points de repère les plus proches
+                var communeCenter = layer.getBounds().getCenter();
+                var distances = [];
+
+                markers.forEach(function(marker) {
+                    var distance = getDistance(communeCenter.lat, communeCenter.lng, marker.getLatLng().lat, marker.getLatLng().lng);
+                    distances.push({ marker: marker, distance: distance });
+                });
+
+                // Trier les distances pour obtenir les deux plus proches
+                distances.sort(function(a, b) {
+                    return a.distance - b.distance;
+                });
+
+                // Proposer les deux marqueurs les plus proches
+                var closestMarker1 = distances[0].marker;
+                var closestMarker2 = distances[1].marker;
+
+                // Afficher "Destination 1" et "Destination 2" dans le popup
+                document.getElementById("destination1").innerHTML = "Destination 1 : " + closestMarker1.getPopup().getContent();
+                document.getElementById("destination2").innerHTML = "Destination 2 : " + closestMarker2.getPopup().getContent();
+
+                // Calculer le temps de trajet en minutes et l'afficher
+                var travelTime1 = calculateTravelTime(distances[0].distance);
+                var travelTime2 = calculateTravelTime(distances[1].distance);
+                document.getElementById("travelTime").innerHTML = "Temps de trajet : " + travelTime1 + " min (Destination 1), " + travelTime2 + " min (Destination 2)";
+
+                document.getElementById("popupPropositions").style.display = 'block';  // Afficher le popup
+
+                // Masquer le popup après 15 secondes
+                setTimeout(function() {
+                    document.getElementById("popupPropositions").style.display = 'none';
+                }, 15000); // 15 secondes
+            } else {
+                alert("Commune non trouvée !");
+            }
+        }
+
+        // Fonction pour rechercher et afficher des suggestions
+        function searchCity() {
+            var cityName = normalizeSaintNames(removeAccents(document.getElementById("searchInput").value.toLowerCase()));
+            var suggestionsDiv = document.getElementById("suggestions");
+            suggestionsDiv.innerHTML = "";  // Réinitialiser les suggestions
+
+            if (cityName.length === 0) {
+                return;  // Ne rien faire si l'utilisateur n'a rien tapé
+            }
+
+            // Parcourir toutes les couches de communes et afficher des suggestions
+            for (var name in communeLayers) {
+                var normalizedCommuneName = normalizeSaintNames(removeAccents(name.toLowerCase()));
+                if (normalizedCommuneName.startsWith(cityName)) {
+                    var suggestion = document.createElement("div");
+                    suggestion.innerHTML = name;
+                    suggestion.onclick = function() {
+                        highlightCommune(this.innerHTML);
+                    };
+                    suggestionsDiv.appendChild(suggestion);
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>
